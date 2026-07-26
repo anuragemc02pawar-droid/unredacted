@@ -171,27 +171,66 @@ def _scrape_sansad(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
     return docs
 
-
 def _scrape_niti(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
+    
     docs = []
     listing_url = "https://www.niti.gov.in/publications/division-reports"
+    MAX_ARTICLES_TO_CHECK = 15  
 
     try:
-        logger.info("[NITI] Fetching: %s", listing_url)
+        logger.info("[NITI] Fetching listing: %s", listing_url)
         resp = requests.get(listing_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        pdf_links = []
+        article_links = []
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if href.lower().endswith(".pdf"):
-                if not href.startswith("http"):
-                    href = urljoin(resp.url, href)
-                title = a.get_text(strip=True) or Path(href).stem
-                pdf_links.append((title, href))
+            text = a.get_text(strip=True)
+            if href.lower().endswith(".pdf") or href.startswith(("mailto:", "#")):
+                continue
+            full_url = href if href.startswith("http") else urljoin(resp.url, href)
+            if "/publications/" in full_url or "read more" in text.lower():
+                article_links.append((text or full_url, full_url))
 
-        logger.info("[NITI] Found %d PDF links", len(pdf_links))
+        seen = set()
+        unique_articles = []
+        for title, url in article_links:
+            if url not in seen:
+                seen.add(url)
+                unique_articles.append((title, url))
+
+        logger.info("[NITI] Found %d article links, checking up to %d",
+                    len(unique_articles), MAX_ARTICLES_TO_CHECK)
+
+        query_words = query.lower().split()
+        relevant = [
+            (t, u) for t, u in unique_articles
+            if any(w in t.lower() or w in u.lower() for w in query_words)
+        ] or unique_articles  # fall back to all if nothing matches
+
+        pdf_links = []
+        for title, article_url in relevant[:MAX_ARTICLES_TO_CHECK]:
+            try:
+                a_resp = requests.get(article_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+                a_resp.raise_for_status()
+                a_soup = BeautifulSoup(a_resp.text, "html.parser")
+
+                for a in a_soup.find_all("a", href=True):
+                    href = a["href"]
+                    if href.lower().endswith(".pdf"):
+                        pdf_url = href if href.startswith("http") else urljoin(a_resp.url, href)
+                        pdf_title = a.get_text(strip=True) or title
+                        pdf_links.append((pdf_title, pdf_url))
+                        break  
+
+                time.sleep(0.5)  
+
+            except requests.RequestException as e:
+                logger.warning("[NITI] Failed to fetch article %s: %s", article_url, e)
+                continue
+
+        logger.info("[NITI] Found %d PDF links after crawling articles", len(pdf_links))
 
         for title, url in pdf_links[:MAX_PDFS_PER_SOURCE]:
             doc = _download_pdf(title, url, "niti.gov.in", pdf_dir)
