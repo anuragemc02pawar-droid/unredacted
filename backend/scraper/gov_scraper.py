@@ -357,7 +357,29 @@ def _download_pdf(
             logger.warning("[Scraper] Not a PDF (%s) — skipping %s", content_type, url)
             return None
 
-        pdf_path.write_bytes(resp.content)
+        content = resp.content
+        actual_size = len(content)
+
+        declared_size = resp.headers.get("content-length")
+        if declared_size is not None:
+            declared_size = int(declared_size)
+            # Allow small variance (chunked encoding etc.) but flag big mismatches
+            if abs(actual_size - declared_size) > max(1024, declared_size * 0.05):
+                logger.warning(
+                    "[Scraper] Size mismatch for %s: server said %d bytes, got %d bytes — skipping",
+                    url, declared_size, actual_size
+                )
+                return None
+
+        if not content.startswith(b"%PDF-"):
+            logger.warning(
+                "[Scraper] Downloaded file for %s doesn't look like a real PDF "
+                "(missing %%PDF- header) — skipping. First bytes: %r",
+                url, content[:20]
+            )
+            return None
+
+        pdf_path.write_bytes(content)
         size_kb = pdf_path.stat().st_size / 1024
 
         doc = ScrapedDocument(
