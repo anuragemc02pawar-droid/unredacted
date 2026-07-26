@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -36,17 +37,9 @@ class ScrapedDocument:
     file_size_kb:  float
 
 
-# Source scrapers 
-
 def _scrape_rbi(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
-   
     docs = []
-    urls_to_try = [
-        "https://www.rbi.org.in/Scripts/AnnualReportPublications.aspx",
-        "https://www.rbi.org.in/Scripts/PublicationsView.aspx?id=21803",
-        "https://rbidocs.rbi.org.in/rdocs/Publications/PDFs/",
-    ]
-
+    listing_url = "https://www.rbi.org.in/Scripts/AnnualReportPublications.aspx"
     search_url = f"https://www.rbi.org.in/Scripts/SearchAggregator.aspx?searchtext={query.replace(' ', '+')}&searchin=RBI"
 
     try:
@@ -60,20 +53,20 @@ def _scrape_rbi(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
             href = a["href"]
             if href.lower().endswith(".pdf"):
                 if not href.startswith("http"):
-                    href = "https://www.rbi.org.in" + href
+                    href = urljoin(resp.url, href)
                 title = a.get_text(strip=True) or Path(href).stem
                 if query.lower().split()[0] in title.lower() or query.lower().split()[0] in href.lower():
                     pdf_links.append((title, href))
 
-        
         if not pdf_links:
-            resp2 = requests.get(urls_to_try[0], headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            resp2 = requests.get(listing_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            resp2.raise_for_status()
             soup2 = BeautifulSoup(resp2.text, "html.parser")
             for a in soup2.find_all("a", href=True):
                 href = a["href"]
                 if href.lower().endswith(".pdf"):
                     if not href.startswith("http"):
-                        href = "https://www.rbi.org.in" + href
+                        href = urljoin(resp2.url, href)
                     title = a.get_text(strip=True) or Path(href).stem
                     pdf_links.append((title, href))
 
@@ -92,24 +85,17 @@ def _scrape_rbi(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
 
 def _scrape_budget(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
-    """
-    Scrape India Budget documents from indiabudget.gov.in.
-    Budget documents are always publicly listed with direct PDF links.
-    """
     docs = []
+    main_page = "https://www.indiabudget.gov.in/"
 
-    # Known direct URLs for recent budget documents
-    budget_pages = [
-        "https://www.indiabudget.gov.in/doc/Budget_Speech.pdf",
-        "https://www.indiabudget.gov.in/doc/rec/allsbe.pdf",
-        "https://www.indiabudget.gov.in/economicsurvey.php",
-        "https://www.indiabudget.gov.in/",
+    known_docs = [
+        ("Union Budget Speech", "https://www.indiabudget.gov.in/doc/budget_speech.pdf"),
+        ("Economic Survey Chapter 1", "https://www.indiabudget.gov.in/economicsurvey/doc/eschapter/echap01.pdf"),
     ]
 
     try:
-        # Try the main budget page first
         logger.info("[Budget] Fetching budget documents listing")
-        resp = requests.get(budget_pages[3], headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        resp = requests.get(main_page, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -118,15 +104,9 @@ def _scrape_budget(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
             href = a["href"]
             if href.lower().endswith(".pdf"):
                 if not href.startswith("http"):
-                    href = "https://www.indiabudget.gov.in" + href
+                    href = urljoin(resp.url, href)
                 title = a.get_text(strip=True) or Path(href).stem
                 pdf_links.append((title, href))
-
-        # Also try known direct PDFs
-        known_docs = [
-            ("Union Budget Speech", "https://www.indiabudget.gov.in/doc/Budget_Speech.pdf"),
-            ("Budget at a Glance", "https://www.indiabudget.gov.in/doc/rec/allsbe.pdf"),
-        ]
 
         for title, url in known_docs:
             if url not in [l[1] for l in pdf_links]:
@@ -134,7 +114,6 @@ def _scrape_budget(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
         logger.info("[Budget] Found %d PDF links", len(pdf_links))
 
-        # Filter by query if possible
         query_words = query.lower().split()
         filtered = [
             (t, u) for t, u in pdf_links
@@ -156,7 +135,7 @@ def _scrape_budget(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 def _scrape_sansad(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
     
     docs = []
-    bills_url = "https://sansad.in/ls/bills"
+    bills_url = "https://sansad.in/ls/legislation/bills"
 
     try:
         logger.info("[Sansad] Fetching bills listing")
@@ -169,7 +148,7 @@ def _scrape_sansad(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
             href = a["href"]
             if href.lower().endswith(".pdf"):
                 if not href.startswith("http"):
-                    href = "https://sansad.in" + href
+                    href = urljoin(resp.url, href)
                 title = a.get_text(strip=True) or Path(href).stem
                 pdf_links.append((title, href))
 
@@ -194,13 +173,12 @@ def _scrape_sansad(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
 
 def _scrape_niti(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
-    
     docs = []
-    search_url = f"https://www.niti.gov.in/search/node/{query.replace(' ', '%20')}"
+    listing_url = "https://www.niti.gov.in/publications/division-reports"
 
     try:
-        logger.info("[NITI] Searching: %s", search_url)
-        resp = requests.get(search_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        logger.info("[NITI] Fetching: %s", listing_url)
+        resp = requests.get(listing_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -209,7 +187,7 @@ def _scrape_niti(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
             href = a["href"]
             if href.lower().endswith(".pdf"):
                 if not href.startswith("http"):
-                    href = "https://www.niti.gov.in" + href
+                    href = urljoin(resp.url, href)
                 title = a.get_text(strip=True) or Path(href).stem
                 pdf_links.append((title, href))
 
@@ -228,21 +206,16 @@ def _scrape_niti(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
 
 def _scrape_finmin(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
-   
     docs = []
 
     known_docs = [
         (
-            "Economic Survey 2023-24 Volume 1",
+            "Economic Survey Chapter 1",
             "https://www.indiabudget.gov.in/economicsurvey/doc/eschapter/echap01.pdf",
         ),
         (
-            "Medium Term Fiscal Policy Statement",
-            "https://www.indiabudget.gov.in/doc/rec/MTFPS.pdf",
-        ),
-        (
-            "Macro Economic Framework Statement",
-            "https://www.indiabudget.gov.in/doc/rec/mefs.pdf",
+            "Union Budget Speech",
+            "https://www.indiabudget.gov.in/doc/budget_speech.pdf",
         ),
     ]
 
@@ -259,8 +232,6 @@ def _scrape_finmin(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
     return docs
 
-
-# Download helper 
 
 def _download_pdf(
     title: str,
@@ -310,10 +281,7 @@ def _download_pdf(
         return None
 
 
-# Public interface 
-
 class GovScraper:
-    
     def __init__(self, pdf_dir: Path):
         self.pdf_dir = pdf_dir
         self.pdf_dir.mkdir(parents=True, exist_ok=True)
