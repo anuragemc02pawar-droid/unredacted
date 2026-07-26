@@ -271,6 +271,64 @@ def _scrape_finmin(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
 
     return docs
 
+def _scrape_cic(query: str, pdf_dir: Path) -> list[ScrapedDocument]:
+   
+    docs = []
+    pages_to_check = [
+        "https://cic.gov.in/circular-reports-conventions",  
+        "https://cic.gov.in/cic_landmark",                  
+        "https://cic.gov.in/rti-study-reports",             
+    ]
+
+    try:
+        pdf_links = []
+        for page_url in pages_to_check:
+            try:
+                resp = requests.get(page_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if href.lower().endswith(".pdf"):
+                        pdf_url = href if href.startswith("http") else urljoin(resp.url, href)
+                        title = a.get_text(strip=True) or Path(pdf_url).stem
+                        if pdf_url.lower().endswith("h.pdf") or "h_0.pdf" in pdf_url.lower():
+                            continue
+                        pdf_links.append((title, pdf_url))
+
+                time.sleep(0.5)
+
+            except requests.RequestException as e:
+                logger.warning("[CIC] Failed to fetch %s: %s", page_url, e)
+                continue
+
+        seen = set()
+        unique_links = []
+        for title, url in pdf_links:
+            if url not in seen:
+                seen.add(url)
+                unique_links.append((title, url))
+
+        logger.info("[CIC] Found %d PDF links across %d pages", len(unique_links), len(pages_to_check))
+
+        query_words = query.lower().split()
+        filtered = [
+            (t, u) for t, u in unique_links
+            if any(w in t.lower() or w in u.lower() for w in query_words)
+        ] or unique_links
+
+        for title, url in filtered[:MAX_PDFS_PER_SOURCE]:
+            doc = _download_pdf(title, url, "cic.gov.in", pdf_dir)
+            if doc:
+                docs.append(doc)
+            time.sleep(DOWNLOAD_DELAY)
+
+    except Exception as e:
+        logger.warning("[CIC] Scrape failed: %s", e)
+
+    return docs
+
 
 def _download_pdf(
     title: str,
