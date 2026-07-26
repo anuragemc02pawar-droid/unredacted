@@ -388,7 +388,7 @@ class GovScraper:
         query: str,
         sources: list[str] | None = None,
     ) -> list[ScrapedDocument]:
-        sources = sources or ["rbi", "budget", "sansad", "niti", "finmin"]
+        sources = sources or ["rbi", "budget", "sansad", "niti", "finmin", "cic"]
 
         source_map = {
             "rbi":    lambda: _scrape_rbi(query, self.pdf_dir),
@@ -396,6 +396,7 @@ class GovScraper:
             "sansad": lambda: _scrape_sansad(query, self.pdf_dir),
             "niti":   lambda: _scrape_niti(query, self.pdf_dir),
             "finmin": lambda: _scrape_finmin(query, self.pdf_dir),
+            "cic":    lambda: _scrape_cic(query, self.pdf_dir),
         }
 
         all_docs = []
