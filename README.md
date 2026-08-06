@@ -163,3 +163,32 @@ unredacted/
 │ └── ContradictionPanel.jsx
 ├── App.jsx
 └── api.js
+
+---
+
+## API reference
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/health` | GET | Backend status and chunk count |
+| `/api/scrape` | POST | Scrape documents for a query |
+| `/api/ingest` | POST | Index all downloaded PDFs |
+| `/api/query` | POST | Ask a question, get grounded answer |
+| `/api/contradictions` | POST | Detect contradictions for a topic |
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a descriptive branch (`feat/upload-endpoint`, `fix/ocr-timeout`)
+3. Keep changes focused — one feature per pull request
+4. Open a pull request with a clear description
+
+For larger changes, open an issue first to discuss the design.
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
