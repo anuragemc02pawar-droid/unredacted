@@ -134,3 +134,32 @@ the same topic but report different figures.
 ---
 
 ## Project structure
+
+unredacted/
+├── backend/
+│ ├── scraper/
+│ │ └── gov_scraper.py scrapes RBI, Budget, Sansad, NITI, FinMin
+│ ├── ingestion/
+│ │ ├── extractor.py PDF text extraction + OCR fallback
+│ │ └── chunker.py overlapping passage splitting
+│ ├── store/
+│ │ └── document_store.py FAISS index + SQLite metadata
+│ ├── rag/
+│ │ ├── retriever.py semantic retrieval with deduplication
+│ │ └── answerer.py Claude API + mock fallback
+│ ├── analysis/
+│ │ └── contradiction.py cross-document contradiction detection
+│ ├── data/
+│ │ ├── pdfs/ downloaded PDFs + metadata sidecars
+│ │ └── db/ FAISS index + SQLite database
+│ ├── app.py Flask API
+│ └── requirements.txt
+└── frontend/
+└── src/
+├── components/
+│ ├── SearchBar.jsx
+│ ├── AnswerPanel.jsx
+│ ├── SourceCard.jsx
+│ └── ContradictionPanel.jsx
+├── App.jsx
+└── api.js
